@@ -1,0 +1,27 @@
+{
+  "name": "agentbridge",
+  "version": "0.1.0",
+  "description": "Local-first AI coding session browser and encrypted LAN handoff",
+  "private": true,
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "serve": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "engines": { "node": ">=22" },
+  "devDependencies": { "electron": "44.5.1", "electron-builder": "26.15.3" },
+  "build": {
+    "appId": "dev.agentbridge.desktop",
+    "productName": "AgentBridge",
+    "files": ["desktop/**", "src/**", "public/**", "package.json"],
+    "directories": { "output": "dist" },
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg", "category": "public.app-category.developer-tools" },
+    "linux": { "target": "AppImage", "category": "Development" }
+  }
+}

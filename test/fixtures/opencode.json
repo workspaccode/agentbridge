@@ -1,0 +1,7 @@
+{
+  "info": { "id": "ses_example", "title": "Add search", "directory": "/projects/studio", "time": { "created": 1791100800000, "updated": 1791100920000 } },
+  "messages": [
+    { "info": { "role": "user", "time": { "created": 1791100800000 } }, "parts": [{ "type": "text", "text": "Add full-text search to the list." }] },
+    { "info": { "role": "assistant", "time": { "created": 1791100920000 } }, "parts": [{ "type": "text", "text": "Search now includes notes and recorded tool output." }, { "type": "tool", "tool": "read", "state": { "input": { "filePath": "list.ts" }, "output": "List source" } }] }
+  ]
+}
