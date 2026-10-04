@@ -10,6 +10,7 @@ import { Store } from './store.mjs';
 import { LAN, readJSON, sendJSON } from './lan.mjs';
 import { CONNECTORS, parseTranscript, handoff } from './connectors.mjs';
 import { demoSessions } from './demo.mjs';
+import { Internet, relayURL } from './internet.mjs';
 
 const run = promisify(execFile);
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
@@ -37,6 +38,7 @@ export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanH
   const store = new Store(dataDir, name);
   const token = randomBytes(32).toString('hex');
   const lan = new LAN(store, { port: lanPort, host: lanHost });
+  const internet = new Internet(store, lan);
   const roots = {
     claude: path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects'),
     codex: path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions')
@@ -88,7 +90,31 @@ export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanH
       if (received.length !== token.length || !timingSafeEqual(Buffer.from(received), Buffer.from(token))) return sendJSON(res, 401, { error: 'Open the app from its startup URL to authenticate.' });
       const body = ['POST', 'PATCH', 'DELETE'].includes(req.method) ? await readJSON(req) : {};
       const respond = result => sendJSON(res, 200, result);
-      if (url.pathname === '/api/state' && req.method === 'GET') return respond({ ...store.publicState(), lan: lan.info(), connectors: CONNECTORS.map(c => ({ ...c, root: roots[c.id] || null, detected: Boolean(roots[c.id] && fs.existsSync(roots[c.id])) })) });
+      if (url.pathname === '/api/state' && req.method === 'GET') return respond({ ...store.publicState(), lan: lan.info(), internet: internet.info(), connectors: CONNECTORS.map(c => ({ ...c, root: roots[c.id] || null, detected: Boolean(roots[c.id] && fs.existsSync(roots[c.id])) })) });
+      if (url.pathname === '/api/internet/settings' && req.method === 'PATCH') {
+        if (body.enabled !== undefined && typeof body.enabled !== 'boolean') throw new Error('Invalid Internet setting.');
+        const endpoint = body.relayUrl !== undefined ? relayURL(body.relayUrl) : store.state.settings.relayUrl;
+        const access = body.relayToken !== undefined ? body.relayToken : store.state.settings.relayToken;
+        if (typeof access !== 'string' || access.length > 200 || (body.enabled && access.length < 32)) throw new Error('The relay access code must be 32–200 characters.');
+        if (body.enabled && !endpoint) throw new Error('Configure your HTTPS relay first.');
+        store.state.settings.relayUrl = endpoint; store.state.settings.relayToken = access;
+        if (body.enabled !== undefined) store.state.settings.internetEnabled = body.enabled;
+        internet.registered = ''; internet.status = store.state.settings.internetEnabled ? 'configured' : 'disabled'; internet.error = ''; store.save();
+        if (store.state.settings.internetEnabled) {
+          try { await internet.tick(); } catch (error) { return respond({ ok: true, connected: false, error: error.message }); }
+        }
+        return respond({ ok: true, connected: store.state.settings.internetEnabled });
+      }
+      if (url.pathname === '/api/internet/connect' && req.method === 'POST') return respond(await internet.connect(body.id));
+      if (url.pathname === '/api/internet/approve' && req.method === 'POST') return respond(await internet.approve(body.requestId));
+      if (url.pathname === '/api/internet/reject' && req.method === 'POST') return respond(await internet.reject(body.requestId));
+      if (url.pathname === '/api/internet/sync' && req.method === 'POST') {
+        internet.ensureEnabled(); return respond(await internet.tick(true));
+      }
+      if (url.pathname === '/api/internet/revoke' && req.method === 'POST') return respond(await internet.revoke(body.id));
+      if (url.pathname === '/api/internet/unblock' && req.method === 'POST') {
+        store.state.internet.blocked = store.state.internet.blocked.filter(id => id !== body.id); store.save(); return respond({ ok: true });
+      }
       if (url.pathname === '/api/search' && req.method === 'GET') {
         const q = (url.searchParams.get('q') || '').slice(0, 1000).toLowerCase();
         return respond({ ids: store.state.sessions.filter(s => !q || [s.title, s.projectName, s.branch, s.originName, s.note, ...s.messages.map(m => m.text), ...s.events.flatMap(e => [e.name, e.input, e.output])].some(value => String(value || '').toLowerCase().includes(q))).map(s => s.id) });
@@ -170,7 +196,7 @@ export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanH
   server.requestTimeout = 30000; server.headersTimeout = 10000;
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const url = `http://127.0.0.1:${server.address().port}/#${token}`;
-  return { store, lan, server, token, url, scan, close: async () => { clearInterval(scanTimer); await lan.close(); await new Promise(resolve => server.close(resolve)); } };
+  return { store, lan, internet, server, token, url, scan, close: async () => { clearInterval(scanTimer); internet.close(); await lan.close(); await new Promise(resolve => server.close(resolve)); } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

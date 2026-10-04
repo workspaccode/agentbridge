@@ -125,7 +125,7 @@ test('Scan imports fixture directories only and offers native resume only for or
   const directory = temporary(); const oldClaude = process.env.CLAUDE_CONFIG_DIR, oldCodex = process.env.CODEX_HOME;
   const claudeRoot = path.join(directory, 'claude'), codexRoot = path.join(directory, 'codex'), project = path.join(directory, 'project');
   fs.mkdirSync(path.join(claudeRoot, 'projects', 'project'), { recursive: true }); fs.mkdirSync(path.join(codexRoot, 'sessions'), { recursive: true }); fs.mkdirSync(project);
-  fs.writeFileSync(path.join(claudeRoot, 'projects', 'project', 'session.jsonl'), fixture('claude.jsonl').replace('/projects/example-api', project));
+  fs.writeFileSync(path.join(claudeRoot, 'projects', 'project', 'session.jsonl'), fixture('claude.jsonl').replace('/projects/example-api', project.replaceAll('\\', '\\\\')));
   fs.writeFileSync(path.join(codexRoot, 'sessions', 'session.jsonl'), fixture('codex.jsonl'));
   process.env.CLAUDE_CONFIG_DIR = claudeRoot; process.env.CODEX_HOME = codexRoot;
   let app;

@@ -1,8 +1,8 @@
 # AgentBridge
 
-A local-first desktop app for finding, reading, and carrying AI coding sessions between your computers. Supports Windows, macOS, and Linux through Electron, with a dependency-free local browser mode.
+A local-first desktop app for finding, reading, and sharing AI coding sessions between your computers over LAN or the Internet. Supports Windows, macOS, and Linux through Electron, with a dependency-free local browser mode.
 
-**Version 0.1.0 is a working source MVP.** It includes real transcript import, local scanning, portable context handoffs, device pairing, and encrypted LAN synchronization. It is not a universal native-session restorer.
+**Version 0.2.0 adds Internet sharing by stable device ID**, with explicit pairing approval, encrypted relay transport, offline message storage and revocation. Transcript import, local scanning, portable context handoffs and direct LAN synchronization remain available. Native remote-session restoration remains tool-specific.
 
 ## Start immediately: local browser mode
 
@@ -36,7 +36,13 @@ Electron needs its platform binary. If your environment disables npm lifecycle s
 
 Transcripts and tool output can contain credentials or private source code. Review the session before enabling sharing or exporting it. The app never reads credential files, but transcript text is preserved verbatim; automated secret redaction is not implemented.
 
-## Connect two or three computers
+## Share over the Internet using an ID
+
+Open **Internet sharing** on both computers and configure the same HTTPS relay URL and access code. Copy the device ID from one computer, request a connection from the other, and approve it on the receiving computer. Select sessions to share, then synchronize. LAN and Internet sharing can be enabled independently.
+
+A running relay is required; GitHub does not host the relay process. The deployable server, Docker Compose and HTTPS configuration are included. See **[the Internet deployment and usage guide](docs/INTERNET.md)**.
+
+## Connect two or three computers on a LAN
 
 Install the app on each computer and connect them to the same private IPv4 LAN.
 
@@ -47,7 +53,7 @@ Install the app on each computer and connect them to the same private IPv4 LAN.
 5. Choose **Sync now**. B receives a readable history copy, including the original transcript, recorded project metadata, and continuation note.
 6. On B, map the project folder to its existing local checkout and create a handoff to continue in your preferred coding tool.
 
-For three computers, pair each pair directly (A–B, A–C, B–C). Received sessions are not relayed to other devices. There is no cloud service, central server, or offline relay. Devices must be online together to transfer updates. The last received copy remains readable offline.
+For three computers, pair each pair directly (A–B, A–C, B–C). Received sessions are not relayed to other devices. Direct LAN mode does not use a central service; both devices must be online together. Internet mode uses the separately configured encrypted relay and retains undelivered updates for up to seven days. The last received copy remains readable offline.
 
 Automatic synchronization runs every 30 seconds when enabled. Automatic local transcript refresh is optional and runs once per minute. Manual address pairing is implemented; automatic discovery is planned. Allow incoming TCP port **47832** on your private network if your OS firewall blocks it. The UI server only listens on localhost and cannot be opened from another computer.
 
@@ -98,7 +104,7 @@ Generic transcript format:
 - **Stays local:** tool login/API credentials, local project mappings, stars, and personal edits to received continuation notes.
 - **Not transferred:** repository files, uncommitted diffs, native tool databases, agent processes, terminal state, and hidden model state.
 
-Sessions have stable IDs scoped to their originating tool and device. A device is the only publisher of its own sessions. Continuing with another agent creates a new tool session; AgentBridge does not merge two independently evolving conversations. Unsharing removes an untouched remote cache on the next successful sync; copies with local notes, stars, or folder mappings are retained as local archives. Previously exported data cannot be recalled. Revoking a peer blocks future requests but does not remotely erase its saved history.
+Sessions have stable IDs scoped to their originating tool and device. Internet ownership is scoped to the cryptographic device ID; a session received over both transports can appear twice. A device is the only publisher of its own sessions. Continuing with another agent creates a new tool session; AgentBridge does not merge two independently evolving conversations. Unsharing removes an untouched remote cache on the next successful sync; copies with local notes, stars, or folder mappings are retained as local archives. Previously exported data cannot be recalled. Revoking a peer blocks future requests but does not remotely erase its saved history.
 
 ## Persistence and transport
 
@@ -123,7 +129,7 @@ Limits: **16 MB per imported transcript**, **24 MB per encrypted request**, **50
 npm test
 ```
 
-Tests use synthetic fixtures and isolated temporary stores. They cover parsing, storage, authenticated local API access, handoffs, local resume eligibility, encrypted two-instance pairing/synchronization, privacy selection, replay rejection, and revocation. No personal agent history is read by the tests.
+Tests use synthetic fixtures and isolated temporary stores. They cover parsing, storage, authenticated local API access, handoffs, local resume eligibility, encrypted two-instance pairing/synchronization, privacy selection, replay rejection, and revocation, plus authenticated Internet enrollment, explicit approval, encrypted offline delivery, and relay restart. No personal agent history is read by the tests.
 
 ## Build installers
 
@@ -143,7 +149,10 @@ Code signing, notarization, automatic updates, and store distribution are not co
 desktop/main.cjs         Electron window and lifecycle
 src/server.mjs           Authenticated localhost UI/API and local scans
 src/connectors.mjs       Tool adapters, transcript parsing, Markdown handoff
-src/lan.mjs              Pairing, encryption, peer synchronization
+src/lan.mjs              Direct LAN pairing and synchronization
+src/identity.mjs         Cryptographic device IDs and signed requests
+src/internet.mjs         Approved Internet pairing and encrypted sync
+relay/                  Deployable persistent relay and HTTPS proxy setup
 src/store.mjs            Atomic local persistence
 public/                 Desktop interface
 test/                   Synthetic fixtures and automated tests

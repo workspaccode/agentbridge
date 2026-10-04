@@ -1,0 +1,34 @@
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: relay/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENTBRIDGE_RELAY_TOKEN: ${RELAY_ACCESS_TOKEN:?Set RELAY_ACCESS_TOKEN in relay/.env}
+    volumes:
+      - relay-data:/data
+    expose:
+      - "8787"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?Set RELAY_DOMAIN in relay/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - relay
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:

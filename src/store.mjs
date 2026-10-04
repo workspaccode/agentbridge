@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { createIdentity } from './identity.mjs';
 
 export function defaultDataDir() {
   if (process.env.AGENTBRIDGE_DATA_DIR) return process.env.AGENTBRIDGE_DATA_DIR;
@@ -18,6 +19,10 @@ export class Store {
       version: 1, device: { id: randomUUID(), name, platform: process.platform },
       settings: { lanEnabled: false, autoSync: true, autoScan: false }, peers: [], sessions: [], activity: []
     };
+    this.state.internet ||= { identity: createIdentity(), peers: [], incoming: [], outgoing: [], blocked: [], processed: [] };
+    this.state.settings.internetEnabled ??= false;
+    this.state.settings.relayUrl ??= '';
+    this.state.settings.relayToken ??= '';
     this.save();
   }
   save() {
@@ -43,7 +48,7 @@ export class Store {
   }
   publicState() {
     return {
-      device: this.state.device, settings: this.state.settings,
+      device: this.state.device, settings: { ...this.state.settings, relayToken: undefined },
       peers: this.state.peers.map(({ key, ...peer }) => peer),
       sessions: this.state.sessions.map(({ raw, messages, events, sourcePath, ...s }) => ({ ...s, messageCount: messages.length, eventCount: events.length, preview: messages.findLast(m => m.role === 'assistant')?.text.slice(0, 220) || '' })),
       activity: this.state.activity

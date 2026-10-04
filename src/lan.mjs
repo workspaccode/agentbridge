@@ -35,7 +35,7 @@ export function seal(secret, body, purpose) {
   const encrypted = Buffer.concat([cipher.update(JSON.stringify({ time: Date.now(), body })), cipher.final()]);
   return { iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') };
 }
-export function unseal(secret, packet, purpose) {
+export function unseal(secret, packet, purpose, maxAgeMs = 5 * 60 * 1000) {
   if (!packet || typeof packet.iv !== 'string' || typeof packet.tag !== 'string' || typeof packet.data !== 'string') throw new Error('Invalid encrypted packet.');
   const iv = Buffer.from(packet.iv, 'base64'), tag = Buffer.from(packet.tag, 'base64');
   if (iv.length !== 12 || tag.length !== 16) throw new Error('Invalid encrypted packet.');
@@ -43,7 +43,7 @@ export function unseal(secret, packet, purpose) {
   decipher.setAAD(Buffer.from(purpose)); decipher.setAuthTag(tag);
   const plain = Buffer.concat([decipher.update(Buffer.from(packet.data, 'base64')), decipher.final()]);
   const result = JSON.parse(plain.toString('utf8'));
-  if (!Number.isFinite(result.time) || Math.abs(Date.now() - result.time) > 5 * 60 * 1000) throw new Error('Packet expired. Check both computers’ clocks.');
+  if (!Number.isFinite(result.time) || result.time > Date.now() + 5 * 60 * 1000 || Date.now() - result.time > maxAgeMs) throw new Error('Packet expired. Check both computers’ clocks.');
   return result.body;
 }
 function request(host, port, route, body) {
@@ -107,7 +107,7 @@ export class LAN {
       for (const m of s.messages) if (!m || !['user', 'assistant', 'system', 'developer', 'tool'].includes(m.role) || !safeString(m.text, 16 * 1024 * 1024) || !safeString(m.timestamp, 100)) throw new Error('Invalid message.');
       for (const e of s.events) if (!e || !safeString(e.name, 500) || !safeString(e.input, 16 * 1024 * 1024) || !safeString(e.output, 16 * 1024 * 1024) || !safeString(e.timestamp, 100)) throw new Error('Invalid tool event.');
       // Pick fields explicitly: peers cannot inject paths, resume flags, or demo state.
-      return { id: s.id, nativeId: s.nativeId, title: s.title, tool: s.tool, projectPath: s.projectPath, projectName: s.projectName, branch: s.branch, commit: s.commit, createdAt: s.createdAt, updatedAt: s.updatedAt, messages: s.messages, events: s.events, raw: s.raw, filename: s.filename, fingerprint: s.fingerprint, originDevice: peer.id, originName: peer.name, originPlatform: peer.platform, sourcePath: '', localProjectPath: '', shared: false, starred: false, demo: false, note: s.note, originNote: s.note, importedAt: new Date().toISOString() };
+      return { id: s.id, nativeId: s.nativeId, title: s.title, tool: s.tool, projectPath: s.projectPath, projectName: s.projectName, branch: s.branch, commit: s.commit, createdAt: s.createdAt, updatedAt: s.updatedAt, messages: s.messages, events: s.events, raw: s.raw, filename: s.filename, fingerprint: s.fingerprint, originDevice: peer.id, originName: peer.name, originPlatform: peer.platform, receivedVia: peer.transport || 'lan', sourcePath: '', localProjectPath: '', shared: false, starred: false, demo: false, note: s.note, originNote: s.note, importedAt: new Date().toISOString() };
     });
     let changed = 0;
     for (const session of incoming) if (this.store.upsert(session)) changed++;

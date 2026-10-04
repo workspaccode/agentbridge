@@ -1,12 +1,13 @@
 {
   "name": "agentbridge",
-  "version": "0.1.0",
-  "description": "Local-first AI coding session browser and encrypted LAN handoff",
+  "version": "0.2.0",
+  "description": "AI coding sessions with encrypted LAN and Internet sharing by device ID",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
     "start": "electron .",
     "serve": "node src/server.mjs",
+    "relay": "node relay/server.mjs",
     "test": "node --test test/*.test.mjs",
     "build": "electron-builder",
     "build:win": "electron-builder --win",

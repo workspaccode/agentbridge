@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Delivered: 0.2.0
+
+- Stable cryptographic device IDs with signed registration and authenticated relay requests.
+- Internet connection requests with explicit approval, rejection/blocking and revocation.
+- End-to-end encrypted relay snapshots, offline queues, acknowledgments and replay controls.
+- Standalone relay server, Docker Compose deployment and HTTPS proxy configuration.
+- Internet configuration and ID sharing screen.
+
 ## Delivered: 0.1.0
 
 - Desktop shell with isolated renderer and a localhost control API.
@@ -30,7 +38,7 @@
 - LAN discovery with a manual fallback; stronger confirmation UX with device verification fingerprints.
 - IPv6 support and configurable LAN listening interface/port.
 - Per-device share permissions, retention rules, redacted copies, and export previews.
-- Optional always-on local relay for computers that are not online together.
+- Indexed scalable relay storage and unified origin deduplication across LAN and Internet transports.
 - Independent protocol review, fuzzing, resource-exhaustion testing, and signed release pipeline.
 
 ## Next: desktop product release
@@ -41,4 +49,4 @@
 - Accessibility review, internationalization, and Arabic RTL layout.
 - Adapter SDK for editor extensions and other agent tools.
 
-No cloud dependency is required for the LAN product. Internet access and credentials are only needed by the agent tools themselves and for installing desktop dependencies.
+No cloud dependency is required for the LAN product. Optional Internet sharing requires outbound HTTPS access and the configured relay access code; LAN-only use remains available.

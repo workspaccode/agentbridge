@@ -1,5 +1,15 @@
 # Validation — October 4, 2026
 
+## Version 0.2.0 Internet update
+
+`npm test`: **18 passed, 0 failed** on Node.js 24.19.0 / Linux. This includes the original 11 tests plus seven new Internet/identity tests: stable IDs and private-key isolation; HTTPS endpoint validation; relay authentication, forged signatures and persistent replay rejection; explicit approval and encrypted selected-only transfer; client/relay restart and offline delivery; rejection/blocking and unsolicited-acceptance rejection; queued-message purge and old-channel rejection after revocation.
+
+**Five Internet browser flows passed**, with zero page/console errors in headless Chromium 153.0.8010.0: relay registration and access-code masking; ID request and explicit approval; selected-session transfer with both LAN listeners disabled; UI revocation and block management; no horizontal overflow at 1100px and 430px.
+
+The Internet screenshots show two synthetic test clients talking to a real local relay process. No public relay was deployed. Docker is unavailable in the execution environment, so the Docker/Caddy deployment configuration has not been executed here. A GitHub Actions matrix is included for Node.js 22 tests on Linux, Windows and macOS; its remote result is separate from the local result above.
+
+The remaining validation below records the earlier 0.1.0 baseline.
+
 ## Automated backend tests
 
 `npm test`: **11 passed, 0 failed** on Node.js 24.19.0 / Linux.
