@@ -1,0 +1,156 @@
+name: Build and release
+run-name: Build and release · ${{ github.event_name }} · ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to Releases (off = build artifacts only)
+        type: boolean
+        default: true
+      release_kind:
+        description: Stable uses package.json version; prerelease uses a unique run version
+        type: choice
+        options: [prerelease, stable]
+        default: prerelease
+
+permissions:
+  contents: read
+
+# Never cancel a run halfway through publishing a release.
+concurrency:
+  group: agentbridge-build-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate release settings
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Prepare version and publication mode
+        id: plan
+        env:
+          RELEASE_MODE: ${{ vars.AGENTBRIDGE_RELEASE_MODE || 'auto' }}
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+          RELEASE_KIND: ${{ inputs.release_kind }}
+        run: node scripts/prepare-release.mjs
+
+  checks:
+    name: Security gate
+    needs: prepare
+    uses: ./.github/workflows/security.yml
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+  build:
+    name: Installer (${{ matrix.platform }} / ${{ matrix.arch }})
+    needs: [prepare, checks]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: macos-latest
+            platform: mac
+            arch: x64
+          - os: macos-latest
+            platform: mac
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_PLATFORM: ${{ matrix.platform }}
+      BUILD_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build installer without publishing credentials
+        shell: bash
+        run: npm run build -- "--$BUILD_PLATFORM" "--$BUILD_ARCH" --publish never "-c.extraMetadata.version=$BUILD_VERSION"
+      - name: Upload installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installers-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    needs: [prepare, checks, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify all installers and create checksums
+        run: node scripts/collect-release.mjs release-assets
+      - name: Publish complete release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Existing tags/releases are rejected, never overwritten.
+          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag already exists. Bump package.json for a new stable version, or run a prerelease."
+            exit 1
+          fi
+          flags=(--draft --target "$GITHUB_SHA" --title "AgentBridge $RELEASE_VERSION" --notes-file release-assets/RELEASE_NOTES.md)
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" "${flags[@]}"
+          gh release upload "$RELEASE_TAG" release-assets/*.exe release-assets/*.dmg release-assets/*.AppImage release-assets/SHA256SUMS.txt
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --latest=true
+          fi
+          echo "Release: https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

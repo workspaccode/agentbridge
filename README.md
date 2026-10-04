@@ -141,7 +141,9 @@ npm run build:mac    # macOS DMG
 npm run build:linux  # Linux AppImage
 ```
 
-Code signing, notarization, automatic updates, and store distribution are not configured. This download provides source code, not a signed Windows or macOS installer.
+**GitHub Actions builds installers after every push to `main`**, gated by tests, CodeQL injection/security scanning, Gitleaks secret scanning and a dependency audit. Successful runs publish unique development prereleases. From **Actions → Build and release → Run workflow**, choose a stable release, prerelease, or build-only run. Set the repository variable `AGENTBRIDGE_RELEASE_MODE=manual` to make publishing manual only.
+
+See [the release and security workflow guide](docs/RELEASES.md) for instructions and [Releases](https://github.com/workspaccode/agentbridge/releases) for completed builds. Code signing, notarization, automatic updates, and store distribution are not configured; installers produced by this workflow are unsigned. Remote builds require GitHub Actions to be available for the account.
 
 ## Project layout
 

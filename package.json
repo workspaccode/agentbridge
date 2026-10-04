@@ -12,17 +12,39 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "test:ci": "node --test test/ci/*.test.mjs"
   },
-  "engines": { "node": ">=22" },
-  "devDependencies": { "electron": "44.5.1", "electron-builder": "26.15.3" },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
   "build": {
     "appId": "dev.agentbridge.desktop",
     "productName": "AgentBridge",
-    "files": ["desktop/**", "src/**", "public/**", "package.json"],
-    "directories": { "output": "dist" },
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg", "category": "public.app-category.developer-tools" },
-    "linux": { "target": "AppImage", "category": "Development" }
+    "files": [
+      "desktop/**",
+      "src/**",
+      "public/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "artifactName": "AgentBridge-${version}-${os}-${arch}.${ext}"
   }
 }
