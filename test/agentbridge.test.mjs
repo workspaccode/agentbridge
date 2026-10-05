@@ -130,7 +130,7 @@ test('Scan imports fixture directories only and offers native resume only for or
   process.env.CLAUDE_CONFIG_DIR = claudeRoot; process.env.CODEX_HOME = codexRoot;
   let app;
   try {
-    app = await createApp({ dataDir: path.join(directory, 'state'), lanPort: 0 });
+    app = await createApp({ dataDir: path.join(directory, 'state'), lanPort: 0, scanContext: { home: directory, env: { CLAUDE_CONFIG_DIR: claudeRoot, CODEX_HOME: codexRoot } } });
     const result = await app.scan(); assert.equal(result.changed, 2); assert.equal((await app.scan()).changed, 0);
     const s = app.store.state.sessions.find(s => s.tool === 'claude');
     const response = await fetch(`${new URL(app.url).origin}/api/sessions/${encodeURIComponent(s.id)}/inspect`, { headers: { Authorization: `Bearer ${app.token}` } });

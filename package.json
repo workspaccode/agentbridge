@@ -1,6 +1,6 @@
 {
   "name": "agentbridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI coding sessions with encrypted LAN and Internet sharing by device ID",
   "private": true,
   "main": "desktop/main.cjs",
@@ -16,7 +16,7 @@
     "test:ci": "node --test test/ci/*.test.mjs"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "devDependencies": {
     "electron": "44.5.1",

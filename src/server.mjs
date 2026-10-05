@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import http from 'node:http';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -11,57 +10,35 @@ import { LAN, readJSON, sendJSON } from './lan.mjs';
 import { CONNECTORS, parseTranscript, handoff } from './connectors.mjs';
 import { demoSessions } from './demo.mjs';
 import { Internet, relayURL } from './internet.mjs';
+import { discoverSources, expandScanPath } from './discovery.mjs';
+import { scanSource } from './readers.mjs';
 
 const run = promisify(execFile);
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
-const MAX_IMPORT = 16 * 1024 * 1024;
 const quote = value => process.platform === 'win32' ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'`;
 
-function transcriptFiles(root) {
-  const files = []; let visited = 0;
-  function walk(directory, depth = 0) {
-    if (depth > 7 || visited > 5000 || files.length >= 500) return;
-    let entries; try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      if (++visited > 5000 || files.length >= 500) return;
-      const name = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) walk(name, depth + 1);
-      else if (entry.isFile() && entry.name.endsWith('.jsonl')) files.push(name);
-    }
-  }
-  walk(root);
-  return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-}
-
-export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanHost } = {}) {
+export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanHost, scanContext = {} } = {}) {
   const store = new Store(dataDir, name);
   const token = randomBytes(32).toString('hex');
   const lan = new LAN(store, { port: lanPort, host: lanHost });
   const internet = new Internet(store, lan);
-  const roots = {
-    claude: path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects'),
-    codex: path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions')
-  };
+  const sources = () => discoverSources({ ...scanContext, scanPaths: store.state.settings.scanPaths });
   let scanning = false;
-  async function scan() {
+  async function scan(tool = '') {
+    if (tool && !CONNECTORS.some(c => c.id === tool)) throw new Error('Unknown connector.');
     if (scanning) return { changed: 0, skipped: 0, errors: [], busy: true };
     scanning = true;
     try {
-      let changed = 0, skipped = 0; const errors = [];
-      for (const [tool, root] of Object.entries(roots)) {
-        for (const filename of transcriptFiles(root)) {
-          try {
-            if (fs.statSync(filename).size > MAX_IMPORT) { skipped++; continue; }
-            const raw = fs.readFileSync(filename, 'utf8');
-            const session = parseTranscript(raw, path.basename(filename), store.state.device, filename);
-            if (session.tool !== tool) { skipped++; continue; }
-            if (store.upsert(session)) changed++;
-          } catch (error) { skipped++; if (errors.length < 10) errors.push(`${path.basename(filename)}: ${error.message}`); }
-        }
+      let changed = 0, skipped = 0; const errors = [], reports = [];
+      for (const source of sources().filter(s => !tool || s.tool === tool)) {
+        const report = await scanSource(source, store.state.device, session => store.upsert(session));
+        reports.push(report); changed += report.changed; skipped += report.skipped;
+        for (const error of report.errors) if (errors.length < 20) errors.push(`${source.label}: ${error}`);
       }
+      const previous = tool ? (store.state.scanSummary?.sources || []).filter(s => s.tool !== tool) : [];
+      store.state.scanSummary = { timestamp: new Date().toISOString(), sources: [...previous, ...reports] };
       store.log(`Local scan: ${changed} updated, ${skipped} skipped`); store.save();
-      return { changed, skipped, errors };
+      return { changed, skipped, errors, limited: reports.some(s => s.limited), sources: reports };
     } finally { scanning = false; }
   }
   if (store.state.settings.lanEnabled) {
@@ -90,7 +67,13 @@ export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanH
       if (received.length !== token.length || !timingSafeEqual(Buffer.from(received), Buffer.from(token))) return sendJSON(res, 401, { error: 'Open the app from its startup URL to authenticate.' });
       const body = ['POST', 'PATCH', 'DELETE'].includes(req.method) ? await readJSON(req) : {};
       const respond = result => sendJSON(res, 200, result);
-      if (url.pathname === '/api/state' && req.method === 'GET') return respond({ ...store.publicState(), lan: lan.info(), internet: internet.info(), connectors: CONNECTORS.map(c => ({ ...c, root: roots[c.id] || null, detected: Boolean(roots[c.id] && fs.existsSync(roots[c.id])) })) });
+      if (url.pathname === '/api/state' && req.method === 'GET') {
+        const discovered = sources().map(s => ({ ...s, lastScan: store.state.scanSummary?.sources.find(r => r.id === s.id) || null }));
+        return respond({ ...store.publicState(), lan: lan.info(), internet: internet.info(), scanSummary: store.state.scanSummary || null, connectors: CONNECTORS.map(c => {
+          const locations = discovered.filter(s => s.tool === c.id);
+          return { ...c, sources: locations, root: locations.find(s => s.detected)?.root || locations[0]?.root || null, detected: locations.some(s => s.detected && s.kind !== 'unsupported'), nativeResume: ['claude', 'codex'].includes(c.id) };
+        }) });
+      }
       if (url.pathname === '/api/internet/settings' && req.method === 'PATCH') {
         if (body.enabled !== undefined && typeof body.enabled !== 'boolean') throw new Error('Invalid Internet setting.');
         const endpoint = body.relayUrl !== undefined ? relayURL(body.relayUrl) : store.state.settings.relayUrl;
@@ -119,7 +102,15 @@ export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanH
         const q = (url.searchParams.get('q') || '').slice(0, 1000).toLowerCase();
         return respond({ ids: store.state.sessions.filter(s => !q || [s.title, s.projectName, s.branch, s.originName, s.note, ...s.messages.map(m => m.text), ...s.events.flatMap(e => [e.name, e.input, e.output])].some(value => String(value || '').toLowerCase().includes(q))).map(s => s.id) });
       }
-      if (url.pathname === '/api/scan' && req.method === 'POST') return respond(await scan());
+      if (url.pathname === '/api/scan' && req.method === 'POST') {
+        if (body.tool !== undefined && typeof body.tool !== 'string') throw new Error('Invalid connector.');
+        return respond(await scan(body.tool || ''));
+      }
+      if (url.pathname === '/api/scan-paths' && req.method === 'PATCH') {
+        if (!CONNECTORS.some(c => c.id === body.tool) || !Array.isArray(body.paths) || body.paths.length > 8) throw new Error('Choose a connector and up to eight custom paths.');
+        const paths = [...new Set(body.paths.map(value => expandScanPath(value, scanContext)))];
+        store.state.settings.scanPaths[body.tool] = paths; store.save(); return respond({ ok: true, paths });
+      }
       if (url.pathname === '/api/import' && req.method === 'POST') {
         if (typeof body.filename !== 'string' || body.filename.length > 500) throw new Error('Invalid filename.');
         const session = parseTranscript(body.content, body.filename, store.state.device);
@@ -180,7 +171,7 @@ export async function createApp({ dataDir, name, port = 0, lanPort = 47832, lanH
               if (checks.dirty) checks.warnings.push('This project has uncommitted changes.');
             } catch { checks.warnings.push('Git repository information is unavailable.'); }
           }
-          const native = session.originDevice === store.state.device.id && !session.demo && session.sourcePath && fs.existsSync(session.sourcePath) && /^[a-zA-Z0-9_-]{1,100}$/.test(session.nativeId) && ['claude', 'codex'].includes(session.tool);
+          const native = session.originDevice === store.state.device.id && !session.demo && !session.sourceFormat?.includes('subagent') && session.sourcePath && fs.existsSync(session.sourcePath) && /^[a-zA-Z0-9_-]{1,100}$/.test(session.nativeId) && ['claude', 'codex'].includes(session.tool);
           checks.nativeAvailable = Boolean(native && checks.exists);
           if (checks.nativeAvailable) {
             const cd = process.platform === 'win32' ? `Set-Location -LiteralPath ${quote(directory)}` : `cd -- ${quote(directory)}`;

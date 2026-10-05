@@ -1,4 +1,17 @@
-# Validation — October 4, 2026
+# Validation — October 5, 2026
+
+## Version 0.3.0 IDE/CLI discovery update
+
+- **32 backend tests passed**, 0 failed, on Node.js 24.19.0 / Linux. Fourteen new tests cover Windows/macOS/Linux path conventions, environment overrides, profiles/custom paths, Copilot snapshots and guarded operation-log replay, Gemini patches/rewinds, Cline/Roo tool results and editor-scoped IDs, CLI archives/subagents, read-only OpenCode v1/v2 SQLite with active WAL, legacy export assembly, malformed/oversized/symlink input, persisted API controls, and new connector transport validation.
+- **5 CI/release tests passed**. `npm audit --audit-level=high` reported **0 vulnerabilities**. CodeQL/Gitleaks execution remains a separate GitHub Actions check; no local pass is claimed for those scanners.
+- **8 browser flows passed** in headless Chromium 153.0.8010.0: seven connector cards and detected paths; per-tool Copilot scans; escaped transcript text/private defaults; invalid custom-path feedback; saved custom Roo storage; path removal retaining imports; full Gemini/Cline scans; no horizontal overflow at 1440px or 430px. No unexpected browser errors. The deliberate invalid-path test produced one expected HTTP 400 console entry.
+- **Linux x64 AppImage packaging succeeded** with Electron 44.5.1. The packaged Node runtime is 24.21.0 with SQLite 3.53.4. **25 parser/API/discovery/LAN tests passed against the actual packaged ASAR modules under that runtime**, including read-only live-WAL access. This does not constitute a graphical desktop-window test.
+
+All histories are synthetic fixtures in isolated temporary homes. macOS layout screenshots are generated on Linux with a synthetic macOS discovery context. Windows and macOS path rules were tested here; native OS execution/installer builds require the GitHub Actions matrix or testing on those computers. No personal IDE history was read. No relay/domain was deployed for this update.
+
+[Integration screen after scanning synthetic histories](screenshots/local-discovery.png).
+
+The sections below preserve the earlier validation record.
 
 ## Version 0.2.0 Internet update
 

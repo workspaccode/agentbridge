@@ -1,5 +1,6 @@
 import http from 'node:http';
 import os from 'node:os';
+import { TOOL_IDS } from './connectors.mjs';
 import net from 'node:net';
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 
@@ -103,11 +104,11 @@ export class LAN {
   receive(sessions, peer) {
     if (!Array.isArray(sessions) || sessions.length > 500) throw new Error('Invalid session batch (maximum 500).');
     const incoming = sessions.map(s => {
-      if (!s || s.originDevice !== peer.id || !safeString(s.id, 200) || !s.id.startsWith(`${s.tool}:${peer.id}:`) || !['claude', 'codex', 'opencode', 'vscode'].includes(s.tool) || !safeString(s.nativeId, 500) || !safeString(s.title, 200) || !safeString(s.raw, 16 * 1024 * 1024) || !safeString(s.projectPath, 4000) || !safeString(s.projectName, 200) || !safeString(s.branch, 500) || !safeString(s.commit, 500) || !safeString(s.fingerprint, 100) || !safeString(s.filename, 500) || !safeString(s.note, 20000) || !Array.isArray(s.messages) || !Array.isArray(s.events) || !Number.isFinite(Date.parse(s.updatedAt)) || !Number.isFinite(Date.parse(s.createdAt))) throw new Error('Invalid session data.');
+      if (!s || s.originDevice !== peer.id || !safeString(s.id, 200) || !s.id.startsWith(`${s.tool}:${peer.id}:`) || !TOOL_IDS.includes(s.tool) || !safeString(s.nativeId, 500) || !safeString(s.title, 200) || !safeString(s.raw, 16 * 1024 * 1024) || !safeString(s.projectPath, 4000) || !safeString(s.projectName, 200) || !safeString(s.branch, 500) || !safeString(s.commit, 500) || !safeString(s.fingerprint, 100) || !safeString(s.filename, 500) || s.sourceHost !== undefined && !safeString(s.sourceHost, 100) || s.sourceFormat !== undefined && !safeString(s.sourceFormat, 100) || !safeString(s.note, 20000) || !Array.isArray(s.messages) || !Array.isArray(s.events) || !Number.isFinite(Date.parse(s.updatedAt)) || !Number.isFinite(Date.parse(s.createdAt))) throw new Error('Invalid session data.');
       for (const m of s.messages) if (!m || !['user', 'assistant', 'system', 'developer', 'tool'].includes(m.role) || !safeString(m.text, 16 * 1024 * 1024) || !safeString(m.timestamp, 100)) throw new Error('Invalid message.');
       for (const e of s.events) if (!e || !safeString(e.name, 500) || !safeString(e.input, 16 * 1024 * 1024) || !safeString(e.output, 16 * 1024 * 1024) || !safeString(e.timestamp, 100)) throw new Error('Invalid tool event.');
       // Pick fields explicitly: peers cannot inject paths, resume flags, or demo state.
-      return { id: s.id, nativeId: s.nativeId, title: s.title, tool: s.tool, projectPath: s.projectPath, projectName: s.projectName, branch: s.branch, commit: s.commit, createdAt: s.createdAt, updatedAt: s.updatedAt, messages: s.messages, events: s.events, raw: s.raw, filename: s.filename, fingerprint: s.fingerprint, originDevice: peer.id, originName: peer.name, originPlatform: peer.platform, receivedVia: peer.transport || 'lan', sourcePath: '', localProjectPath: '', shared: false, starred: false, demo: false, note: s.note, originNote: s.note, importedAt: new Date().toISOString() };
+      return { id: s.id, nativeId: s.nativeId, title: s.title, tool: s.tool, projectPath: s.projectPath, projectName: s.projectName, branch: s.branch, commit: s.commit, createdAt: s.createdAt, updatedAt: s.updatedAt, messages: s.messages, events: s.events, raw: s.raw, filename: s.filename, sourceHost: s.sourceHost || '', sourceFormat: s.sourceFormat || '', fingerprint: s.fingerprint, originDevice: peer.id, originName: peer.name, originPlatform: peer.platform, receivedVia: peer.transport || 'lan', sourcePath: '', localProjectPath: '', shared: false, starred: false, demo: false, note: s.note, originNote: s.note, importedAt: new Date().toISOString() };
     });
     let changed = 0;
     for (const session of incoming) if (this.store.upsert(session)) changed++;

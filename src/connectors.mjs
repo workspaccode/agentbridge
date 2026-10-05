@@ -1,12 +1,17 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { additionalFormat } from './formats.mjs';
 
 export const CONNECTORS = [
   { id: 'claude', name: 'Claude Code', short: 'CL', color: '#dc9978', mode: 'Read local JSONL', description: 'Scan CLI transcripts. Local sessions offer a resume command; transferred sessions offer a handoff.', scan: true },
   { id: 'codex', name: 'Codex', short: 'CX', color: '#a2b9ee', mode: 'Read local JSONL', description: 'Scan CLI rollout files. Internal formats may change; unsupported records remain in the original export.', scan: true },
-  { id: 'opencode', name: 'OpenCode', short: 'OC', color: '#9fd1b8', mode: 'Import JSON export', description: 'Import an OpenCode export. Download its original JSON for the tool’s own import workflow.', scan: false },
-  { id: 'vscode', name: 'VS Code / other', short: 'VS', color: '#8ebae1', mode: 'Import transcript', description: 'Import an explicit JSON transcript. Extension-specific automatic discovery is planned.', scan: false }
+  { id: 'opencode', name: 'OpenCode', short: 'OC', color: '#9fd1b8', mode: 'SQLite / legacy JSON / export', description: 'Read local session databases and legacy JSON stores without writing to them. CLI and desktop share the same store.', scan: true },
+  { id: 'gemini', name: 'Gemini CLI', short: 'GM', color: '#a6baf5', mode: 'Read local JSON / JSONL', description: 'Read recorded chats, tool calls and append-only updates. Project hashes do not always reveal the original folder.', scan: true },
+  { id: 'vscode', name: 'VS Code / Copilot', short: 'VS', color: '#8ebae1', mode: 'Chat JSON / operation logs', description: 'Read Copilot workspace and empty-window chats in VS Code, Insiders and compatible editors. Generic JSON import is also available.', scan: true },
+  { id: 'cline', name: 'Cline', short: 'CN', color: '#d6b8ee', mode: 'Read extension task histories', description: 'Read api_conversation_history.json in VS Code-family editors. New Cline SDK/CLI SQLite stores are not yet supported.', scan: true },
+  { id: 'roo', name: 'Roo Code', short: 'RC', color: '#edc585', mode: 'Read extension task histories', description: 'Read Roo Code task conversations and tool results. Add a custom tasks directory if you changed its storage location.', scan: true }
 ];
+export const TOOL_IDS = CONNECTORS.map(c => c.id);
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const date = value => { const d = new Date(value ?? Date.now()); return Number.isNaN(d.valueOf()) ? new Date().toISOString() : d.toISOString(); };
@@ -28,19 +33,20 @@ function normalize(session, raw, filename, device, sourcePath = '') {
   const projectPath = String(session.projectPath || '');
   const projectName = projectPath.split(/[\\/]/).filter(Boolean).at(-1) || 'Unassigned project';
   return {
-    id: `${session.tool}:${device.id}:${hash(nativeId).slice(0, 24)}`, nativeId,
+    id: `${session.tool}:${device.id}:${hash(session.identityScope ? `${session.identityScope}:${nativeId}` : nativeId).slice(0, 24)}`, nativeId,
     title: String(session.title || first).replace(/\s+/g, ' ').slice(0, 100),
     tool: session.tool, projectName, projectPath, branch: String(session.branch || ''), commit: String(session.commit || ''),
-    createdAt: date(session.createdAt || session.messages[0]?.timestamp),
-    updatedAt: date(session.updatedAt || session.messages.at(-1)?.timestamp),
+    createdAt: date(session.createdAt ?? session.messages[0]?.timestamp),
+    updatedAt: date(session.updatedAt ?? session.messages.at(-1)?.timestamp),
     originDevice: device.id, originName: device.name, originPlatform: device.platform,
     messages: session.messages, events: session.events || [], raw, filename: path.basename(filename),
     sourcePath, fingerprint: hash(raw), shared: false, starred: false, demo: false,
+    sourceHost: String(session.sourceHost || '').slice(0, 100), sourceFormat: String(session.sourceFormat || '').slice(0, 100),
     note: '', localProjectPath: '', importedAt: new Date().toISOString()
   };
 }
 
-export function parseTranscript(raw, filename, device, sourcePath = '') {
+export function parseTranscript(raw, filename, device, sourcePath = '', context = {}) {
   if (typeof raw !== 'string' || Buffer.byteLength(raw) > 16 * 1024 * 1024) throw new Error('Transcript limit is 16 MB.');
   let parsed, records = [];
   try { parsed = JSON.parse(raw); } catch {
@@ -58,23 +64,13 @@ export function parseTranscript(raw, filename, device, sourcePath = '') {
     // Imported packages are local copies, not credentials or native resume state.
     return normalize({ ...source, nativeId: `package:${source.id}`, events: source.events || [] }, typeof source.raw === 'string' ? source.raw : raw, filename, device);
   }
-  if (parsed?.info && Array.isArray(parsed.messages)) {
-    const info = parsed.info;
-    const messages = [], events = [];
-    for (const item of parsed.messages) {
-      const meta = item.info || item;
-      const parts = item.parts || meta.parts || [];
-      const content = text(parts) || text(meta.content);
-      const timestamp = date(meta.time?.created || meta.timestamp || info.time?.created);
-      if (content) messages.push({ role: meta.role === 'user' ? 'user' : 'assistant', text: content, timestamp });
-      for (const p of parts) if (p.type === 'tool') events.push({ name: String(p.tool || 'tool'), input: stringify(p.state?.input), output: stringify(p.state?.output), timestamp });
-    }
-    return normalize({ tool: 'opencode', nativeId: info.id, title: info.title, projectPath: info.directory, createdAt: info.time?.created, updatedAt: info.time?.updated, messages, events }, raw, filename, device, sourcePath);
-  }
+  const finish = session => normalize({ ...session, nativeId: session.nativeId || context.nativeId, projectPath: session.projectPath || context.projectPath, sourceHost: context.host || session.sourceHost, identityScope: context.identityScope, sourceFormat: context.sourceFormat || session.sourceFormat }, raw, filename, device, sourcePath);
+  const additional = additionalFormat(parsed, Array.isArray(parsed) ? parsed : parsed ? [parsed] : records, context);
+  if (additional) return finish(additional);
   if (parsed?.messages && Array.isArray(parsed.messages)) {
     const tool = CONNECTORS.some(c => c.id === parsed.tool) ? parsed.tool : 'vscode';
     const messages = parsed.messages.map(m => ({ role: ['user', 'assistant', 'system'].includes(m.role) ? m.role : 'assistant', text: text(m.content ?? m.text), timestamp: date(m.timestamp || parsed.updatedAt) })).filter(m => m.text);
-    return normalize({ ...parsed, tool, nativeId: parsed.sessionId || parsed.id, messages, events: [] }, raw, filename, device, sourcePath);
+    return finish({ ...parsed, tool, nativeId: parsed.sessionId || parsed.id, messages, events: Array.isArray(parsed.events) ? parsed.events : [] });
   }
   if (Array.isArray(parsed)) records = parsed;
   else if (parsed) records = [parsed];
@@ -118,7 +114,7 @@ export function parseTranscript(raw, filename, device, sourcePath = '') {
     }
     if (r.timestamp) session.updatedAt = r.timestamp;
   }
-  return normalize(session, raw, filename, device, sourcePath);
+  return finish(session);
 }
 
 export function handoff(session, destination = 'your coding agent') {

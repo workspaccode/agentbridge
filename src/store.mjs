@@ -23,6 +23,7 @@ export class Store {
     this.state.settings.internetEnabled ??= false;
     this.state.settings.relayUrl ??= '';
     this.state.settings.relayToken ??= '';
+    this.state.settings.scanPaths ??= {};
     this.save();
   }
   save() {

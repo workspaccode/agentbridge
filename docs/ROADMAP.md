@@ -1,5 +1,19 @@
 # Implementation roadmap
 
+## Delivered: 0.3.0
+
+- Automatic Windows/macOS/Linux IDE and CLI storage discovery, editor profiles and portable VS Code locations.
+- Copilot JSON/mutation logs, Gemini JSON/JSONL, Cline and Roo extension conversation readers.
+- Read-only OpenCode SQLite v1/v2 and legacy multi-file export assembly.
+- Codex archives and distinct, handoff-only Claude subagent histories.
+- Per-source read results/errors/limits, per-tool scans and persisted custom locations.
+- Format/editor provenance retained across encrypted session sharing.
+
+## Next: additional history readers
+
+- Native Cursor/Windsurf, JetBrains and the new Cline CLI/SDK storage schema.
+- Version-specific adapter fixtures, explicit custom-storage hints and remote SSH/WSL/container integration.
+
 ## Delivered: 0.2.0
 
 - Stable cryptographic device IDs with signed registration and authenticated relay requests.
@@ -11,7 +25,7 @@
 ## Delivered: 0.1.0
 
 - Desktop shell with isolated renderer and a localhost control API.
-- Browser mode requiring only Node.js 22+.
+- Browser mode requiring only Node.js 22.13+.
 - Unified session list, tool filters, full transcript/tool search, stars, and project grouping.
 - Claude Code and Codex CLI local transcript scanners; OpenCode/generic export import.
 - Raw transcript retention, portable package export, and cross-tool Markdown handoff.

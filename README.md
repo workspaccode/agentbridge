@@ -2,11 +2,11 @@
 
 A local-first desktop app for finding, reading, and sharing AI coding sessions between your computers over LAN or the Internet. Supports Windows, macOS, and Linux through Electron, with a dependency-free local browser mode.
 
-**Version 0.2.0 adds Internet sharing by stable device ID**, with explicit pairing approval, encrypted relay transport, offline message storage and revocation. Transcript import, local scanning, portable context handoffs and direct LAN synchronization remain available. Native remote-session restoration remains tool-specific.
+**Version 0.3.0 discovers IDE and CLI histories automatically** on Windows, macOS and Linux: Claude Code, Codex, OpenCode, Gemini CLI, VS Code/Copilot, Cline and Roo Code. Inspect detected paths, scan one tool or all tools, and add custom storage locations in **Integrations**. Encrypted LAN/Internet sharing by device ID remains available. Native remote-session restoration remains tool-specific.
 
 ## Start immediately: local browser mode
 
-Install Node.js 22 or newer, extract this project, and open a terminal in its folder:
+Install Node.js 22.13 or newer, extract this project, and open a terminal in its folder:
 
 ```sh
 npm run serve
@@ -27,7 +27,7 @@ Electron needs its platform binary. If your environment disables npm lifecycle s
 
 ## First run
 
-1. Choose **Scan local sessions** to read Claude Code CLI and Codex CLI transcript folders, or **Import session** to load JSON/JSONL files.
+1. Open **Integrations** to inspect automatically detected IDE/CLI storage paths. Choose **Scan this tool** or **Scan local sessions**, or use **Import session** for a JSON/JSONL export. Add a custom path if you changed a tool's storage directory. See [supported formats and Windows/macOS paths](docs/DISCOVERY.md).
 2. Use **Explore example sessions** to preview the interface without importing personal history. Examples are labeled and excluded from sharing.
 3. Open a session to view messages and recorded tool activity.
 4. Set the local project folder and write a continuation note; press **Save context**.
@@ -61,14 +61,19 @@ If interface discovery is restricted or the computer has multiple LAN interfaces
 
 ## Integration capabilities
 
-| Tool | Read history | Import method | Native continuation in this MVP |
-| --- | --- | --- | --- |
-| Claude Code CLI | Messages and supported tool events | Scan `$CLAUDE_CONFIG_DIR/projects` or `~/.claude/projects`, or import JSONL | Copy a resume command only when the original local transcript and project folder exist |
-| Codex CLI | Messages and supported tool events | Scan `$CODEX_HOME/sessions` or `~/.codex/sessions`, or import rollout JSONL | Copy a resume command only when the original local transcript and project folder exist |
-| OpenCode | Messages and supported tool events | Import JSON export | Download original JSON for the tool's own import workflow; automatic import/resume is not implemented |
-| VS Code / other | Messages | Import a generic JSON transcript | Context handoff; extension-specific discovery/resume is not implemented |
+| Tool | Read history / automatic scan | Native continuation |
+| --- | --- | --- |
+| Claude Code | CLI JSONL, including subagent histories | Local main-session resume command when original transcript and project exist; subagents use handoff |
+| Codex | CLI JSONL in sessions and archived_sessions | Local resume command when original transcript and project exist |
+| OpenCode | SQLite v1/v2 stores, legacy JSON trees, JSON exports | Handoff / assembled JSON export; tool import/resume is not executed |
+| Gemini CLI | JSON chats and append-only JSONL updates | Context handoff / original export |
+| VS Code / Copilot | Workspace and empty-window chat JSON / mutation logs | Context handoff / original export |
+| Cline | Extension task API conversation histories | Context handoff; new Cline CLI/SDK SQLite format is detected but not read |
+| Roo Code | Extension task API conversation histories | Context handoff / original export |
 
-Claude Code and Codex internal transcript formats may change. Unsupported records stay in the raw original export but may not appear in the normalized viewer. Scanning does not modify source files, scan archives, or write into a tool's database. Native command availability is a filesystem check, not a guarantee that an installed tool version will accept the session.
+Editor locations include VS Code, Insiders, VSCodium, Cursor and Windsurf, with named profiles and VS Code portable storage. This reads supported Copilot/Cline/Roo formats inside compatible editors; **native Cursor/Windsurf chats and JetBrains AI histories are not supported**. Remote SSH/WSL/container stores require an accessible custom path or export. [Discovery details and limitations](docs/DISCOVERY.md).
+
+Internal formats may change. Unsupported records remain in the original transcript/export but may not appear in the viewer. Scans do not write to source files or tool databases, and imports stay private until explicitly shared. For OpenCode databases and multi-file stores, AgentBridge retains an assembled session JSON export, not the native database. Native command availability is a filesystem check, not a guarantee that an installed tool version will accept the session.
 
 OpenCode CLI versions differ. Use the installed tool's `--help` to check its export/import commands. Documented variants include:
 
@@ -121,7 +126,7 @@ LAN requests use HTTP as a carrier for application-encrypted AES-256-GCM packets
 
 Local UI access requires a per-launch bearer token, checks Host/Origin headers, and uses a restrictive content security policy. The Electron renderer has Node integration disabled, context isolation enabled, and sandboxing enabled. It cannot navigate to remote sites or open new windows. Tool output is rendered as text.
 
-Limits: **16 MB per imported transcript**, **24 MB per encrypted request**, **500 sessions per exchange**, and **500 files per connector scan**. Very large histories need incremental transfer and indexed storage, which are planned.
+Limits: **16 MB per imported transcript**, **24 MB per encrypted request**, **500 sessions per exchange**, and **500 sessions/files per source location scan**. Very large histories need incremental transfer and indexed storage, which are planned.
 
 ## Tests
 
@@ -129,7 +134,7 @@ Limits: **16 MB per imported transcript**, **24 MB per encrypted request**, **50
 npm test
 ```
 
-Tests use synthetic fixtures and isolated temporary stores. They cover parsing, storage, authenticated local API access, handoffs, local resume eligibility, encrypted two-instance pairing/synchronization, privacy selection, replay rejection, and revocation, plus authenticated Internet enrollment, explicit approval, encrypted offline delivery, and relay restart. No personal agent history is read by the tests.
+Tests use synthetic fixtures and isolated temporary stores. They cover parsing, storage, authenticated local API access, handoffs, local resume eligibility, encrypted two-instance pairing/synchronization, privacy selection, replay rejection, and revocation, plus authenticated Internet enrollment, explicit approval, encrypted offline delivery, and relay restart. Discovery tests also cover Windows/macOS paths, editor profiles, safe mutation-log replay, Gemini updates/rewinds, Cline/Roo tool results, read-only OpenCode SQLite/WAL access, custom paths, archives and subagent identity. No personal agent history is read by the tests.
 
 ## Build installers
 
@@ -150,7 +155,10 @@ See [the release and security workflow guide](docs/RELEASES.md) for instructions
 ```text
 desktop/main.cjs         Electron window and lifecycle
 src/server.mjs           Authenticated localhost UI/API and local scans
-src/connectors.mjs       Tool adapters, transcript parsing, Markdown handoff
+src/connectors.mjs       Normalized sessions, import, Markdown handoff
+src/discovery.mjs        Cross-platform IDE/CLI location discovery
+src/formats.mjs          Copilot, Gemini, Cline/Roo and OpenCode format readers
+src/readers.mjs          Bounded transcript / read-only SQLite scanning
 src/lan.mjs              Direct LAN pairing and synchronization
 src/identity.mjs         Cryptographic device IDs and signed requests
 src/internet.mjs         Approved Internet pairing and encrypted sync
@@ -161,7 +169,7 @@ test/                   Synthetic fixtures and automated tests
 docs/                   Architecture and development roadmap
 ```
 
-Official integration references checked October 4, 2026:
+Official integration references (discovery sources checked October 5, 2026 are linked in [DISCOVERY.md](docs/DISCOVERY.md)):
 
 - https://code.claude.com/docs/en/sessions
 - https://learn.chatgpt.com/docs/codex/cli
